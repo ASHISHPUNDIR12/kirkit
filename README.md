@@ -6,6 +6,12 @@ Email/password signup and login protect every match and innings endpoint.
 See [deployment instructions](backend/DEPLOYMENT.md) for production setup,
 authentication API details, and migration requirements.
 
+## Scoring and roster features
+
+Undo, duplicate-score protection, saved teams/players, career statistics and full
+scorecards are implemented. Read the [feature and migration guide](docs/SCORING-FEATURES.md)
+before starting the updated backend. Live sharing is not included.
+
 ## Requirements
 
 - Node.js 24 LTS (Node.js 22.13+ also works).
@@ -135,6 +141,10 @@ and their QR codes expire when the tunnel process stops; they should not be save
 as the default local backend address.
 
 ### Connect from a phone
+
+For Windows + WSL2 + Expo Go, follow the [phone connectivity guide](docs/PHONE-CONNECTIVITY.md)
+for scoped Windows forwarding/firewall commands, diagnostics, and an HTTPS backend tunnel.
+Expo's `--tunnel` does not expose the Express backend.
 
 Set `EXPO_PUBLIC_API_URL` in `mobile/.env` to your computer's LAN address:
 
@@ -366,7 +376,8 @@ Native DevTools desktop window could not launch in this Linux environment becaus
 `libnspr4.so` is absent; Metro and bundle exports still run successfully.
 
 Database pool size and query/connection timeouts are configurable; see
-`backend/.env.example`. No global networking defaults are overridden.
+`backend/.env.example`. The existing IPv4/IPv6 connection-racing workaround is
+preserved for the project's WSL network (`setDefaultAutoSelectFamily(false)`).
 
 ## Created files
 

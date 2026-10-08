@@ -1,3 +1,7 @@
+import TextField from "../components/TextField";
+import { colors, ui } from "../theme/theme";
+import NameChoices from "../components/NameChoices";
+import { useTeams } from "../hooks/useTeams";
 import { useRef, useState } from "react";
 import { router } from "expo-router";
 import {
@@ -7,7 +11,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,6 +19,9 @@ import { createMatch } from "../services/api";
 import type { Match } from "../types/api";
 
 export default function CreateMatchScreen() {
+  const { teams, error: rosterError } = useTeams();
+  const [team1Id, setTeam1Id] = useState<string>();
+  const [team2Id, setTeam2Id] = useState<string>();
   const [team1Name, setTeam1Name] = useState("");
   const [team2Name, setTeam2Name] = useState("");
   const [overs, setOvers] = useState("5");
@@ -51,13 +57,13 @@ export default function CreateMatchScreen() {
     setError("");
     try {
       setCreatedMatch(
-        await createMatch({ team1Name: team1, team2Name: team2, oversLimit }),
+        await createMatch({ team1Name: team1, team2Name: team2, oversLimit, team1Id, team2Id }),
       );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to save the match.";
       setError(
-        `${message} If the connection was interrupted, check Home before creating it again.`,
+        `${message} Check your saved matches before creating it again.`,
       );
     } finally {
       submitting.current = false;
@@ -81,9 +87,9 @@ export default function CreateMatchScreen() {
             disabled={saving}
             style={styles.back}
           >
-            <Text style={styles.backText}>‹ Back to Home</Text>
+            <Text style={styles.backText}>← Home</Text>
           </Pressable>
-          <Text style={styles.label}>GULLY CRICKET</Text>
+          <Text style={styles.label}>MATCH DAY / 01</Text>
           <Text style={styles.title}>
             {createdMatch ? "Match created." : "Let’s play."}
           </Text>
@@ -125,11 +131,13 @@ export default function CreateMatchScreen() {
             </View>
           ) : (
             <View style={styles.card}>
+              {rosterError ? <Text style={styles.error}>{rosterError} You can still enter custom teams.</Text> : null}
               <Text style={styles.fieldLabel}>Team 1 name</Text>
-              <TextInput
+              <NameChoices names={teams.filter(t => t.id !== team2Id).map(t => t.name)} disabled={saving} onSelect={name => { setTeam1Name(name); setTeam1Id(teams.find(t => t.name === name)?.id); }} />
+              <TextField
                 accessibilityLabel="Team 1 name"
                 value={team1Name}
-                onChangeText={setTeam1Name}
+                onChangeText={value => { setTeam1Name(value); setTeam1Id(undefined); }}
                 placeholder="e.g. Tigers"
                 placeholderTextColor="#849080"
                 maxLength={60}
@@ -138,10 +146,11 @@ export default function CreateMatchScreen() {
                 style={styles.input}
               />
               <Text style={styles.fieldLabel}>Team 2 name</Text>
-              <TextInput
+              <NameChoices names={teams.filter(t => t.id !== team1Id).map(t => t.name)} disabled={saving} onSelect={name => { setTeam2Name(name); setTeam2Id(teams.find(t => t.name === name)?.id); }} />
+              <TextField
                 accessibilityLabel="Team 2 name"
                 value={team2Name}
-                onChangeText={setTeam2Name}
+                onChangeText={value => { setTeam2Name(value); setTeam2Id(undefined); }}
                 placeholder="e.g. Warriors"
                 placeholderTextColor="#849080"
                 maxLength={60}
@@ -149,8 +158,9 @@ export default function CreateMatchScreen() {
                 autoCapitalize="words"
                 style={styles.input}
               />
-              <Text style={styles.fieldLabel}>Number of overs</Text>
-              <TextInput
+              <Text style={styles.fieldLabel}>Overs per innings</Text>
+              <View style={styles.presets}>{['5', '10', '15', '20'].map(value => <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${value} overs`} accessibilityState={{ selected: overs === value, disabled: saving }} disabled={saving} onPress={() => setOvers(value)} style={[styles.preset, overs === value && { backgroundColor: colors.lime }]}><Text style={styles.presetText}>{value}</Text></Pressable>)}</View>
+              <TextField
                 accessibilityLabel="Number of overs"
                 value={overs}
                 onChangeText={setOvers}
@@ -162,7 +172,7 @@ export default function CreateMatchScreen() {
                 style={styles.input}
               />
               <Text style={styles.hint}>
-                Overs per innings. Enter a positive whole number.
+                Pick a format above, or enter your own number of overs.
               </Text>
               {error ? (
                 <Text
@@ -187,71 +197,17 @@ export default function CreateMatchScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#10281b" },
-  content: { padding: 24, width: "100%", maxWidth: 520, alignSelf: "center" },
-  back: {
-    minHeight: 44,
-    justifyContent: "center",
-    alignSelf: "flex-start",
-    marginBottom: 24,
-  },
-  backText: { color: "#b8e46a", fontSize: 15 },
-  label: {
-    color: "#b8e46a",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 3,
-    marginBottom: 16,
-  },
-  title: { color: "#ffffff", fontSize: 38, fontWeight: "800" },
-  subtitle: {
-    color: "#c4d2c8",
-    fontSize: 16,
-    lineHeight: 24,
-    marginTop: 12,
-    marginBottom: 28,
-  },
-  card: { backgroundColor: "#f6f8ef", borderRadius: 20, padding: 22 },
-  fieldLabel: {
-    color: "#10281b",
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 9,
-  },
-  input: {
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#d1dacb",
-    borderRadius: 10,
-    color: "#10281b",
-    fontSize: 17,
-    minHeight: 54,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 22,
-  },
-  hint: {
-    color: "#536253",
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: -12,
-    marginBottom: 24,
-  },
-  error: { color: "#a3322a", fontSize: 14, lineHeight: 21, marginBottom: 18 },
-  team: { color: "#10281b", fontSize: 25, fontWeight: "700" },
-  vs: { color: "#74816f", marginVertical: 8, fontSize: 14 },
-  savedOvers: {
-    color: "#536253",
-    fontSize: 14,
-    lineHeight: 22,
-    marginTop: 20,
-    marginBottom: 26,
-  },
-  homeLink: {
-    minHeight: 48,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  homeLinkText: { color: "#257039", fontSize: 15, fontWeight: "700" },
+ screen: ui.screen, content: ui.content, back: ui.back, backText: ui.backText,
+ label: ui.eyebrow, title: ui.title, subtitle: ui.subtitle, card: ui.card,
+ fieldLabel: { ...ui.fieldLabel, marginTop: 8 }, input: ui.input, error: ui.error,
+ team: { color: colors.ink, fontSize: 27, fontWeight: '800' },
+ vs: { color: colors.muted, marginVertical: 10, fontSize: 13 },
+ savedOvers: { color: colors.muted, fontSize: 14, lineHeight: 22, marginTop: 20, marginBottom: 26 },
+ hint: { color: colors.muted, fontSize: 12, lineHeight: 19, marginBottom: 24 },
+ homeLink: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+ homeLinkText: { color: colors.ink, fontWeight: '700', fontSize: 14 },
+ teamOption: { minHeight: 56, borderWidth: 1.5, borderColor: colors.ink, borderRadius: 4, padding: 14, marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+ teamSelected: { backgroundColor: colors.lime }, teamOptionText: { color: colors.ink, fontSize: 16, fontWeight: '700', flex: 1 }, teamSelectedText: { color: colors.ink }, radio: { color: colors.ink, fontSize: 20 }, radioSelected: { color: colors.ink },
+ savedTeam: { color: colors.ink, fontSize: 22, fontWeight: '800', marginBottom: 16 }, savedText: { color: colors.muted, fontSize: 16, lineHeight: 28 },
+ presets: { flexDirection: 'row', gap: 10, marginBottom: 14 }, preset: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.ink, borderRadius: 4 }, presetText: { color: colors.ink, fontSize: 14, fontWeight: '800' },
 });

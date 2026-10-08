@@ -1,13 +1,11 @@
-// Keep bearer credentials in memory, never in unencrypted device/browser storage.
-export type Session = { token: string; expiresAt: string; user: { id: string; email: string } };
-let session: Session | null = null;
-const listeners = new Set<() => void>();
-export const getSession = () => session;
-export function setSession(value: Session | null) {
-  session = value;
-  listeners.forEach(listener => listener());
-}
-export function subscribeSession(listener: () => void) {
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
-}
+import { credentialStorage } from '../auth/credentialStorage';
+import { createSessionStore } from '../auth/sessionStore';
+export type { Session } from '../auth/sessionStore';
+const store = createSessionStore(credentialStorage);
+export const getSession = store.getSession;
+export const getAuthState = store.getState;
+export const subscribeSession = store.subscribe;
+export const restoreSession = store.restore;
+export const saveSession = store.save;
+export const invalidateSession = store.invalidate;
+export const clearSession = store.clear;

@@ -4,6 +4,8 @@ export type HealthResponse = {
 };
 
 export type CreateMatchInput = {
+  team1Id?: string | null;
+  team2Id?: string | null;
   team1Name: string;
   team2Name: string;
   oversLimit: number;
@@ -15,6 +17,8 @@ export type Match = CreateMatchInput & {
   status: "CREATED" | "IN_PROGRESS" | "COMPLETED";
   createdAt: string;
   result: string | null;
+  tossWinner?: string | null;
+  tossDecision?: 'BAT' | 'BOWL' | null;
 };
 
 export type StartMatchInput = {
@@ -31,6 +35,8 @@ export type StartedMatch = Match & {
 };
 
 export type ScoreboardInnings = {
+  canUndo: boolean;
+  undoLabel: string | null;
   id: string;
   inningsNumber: number;
   battingTeamName: string;
@@ -60,11 +66,16 @@ export type ScoreboardInnings = {
     ballNumber: number;
     batsmanName: string;
     bowlerName: string;
+    batsmanId?: string | null;
+    nonStrikerName?: string | null;
     runs: number;
     eventType: string;
   }[];
   match: {
     id: string;
+    revision: number;
+    team1Id: string | null;
+    team2Id: string | null;
     team1Name: string;
     team2Name: string;
     oversLimit: number;
@@ -94,7 +105,23 @@ export type MatchDetails = Match & {
     completedOvers: number;
     ballsInCurrentOver: number;
     status: "IN_PROGRESS" | "COMPLETED";
+    scorecard: Scorecard;
     players: ScoreboardInnings["players"];
     ballEvents: ScoreboardInnings["ballEvents"];
   }[];
+};
+
+export type Team = { id: string; name: string; players: SavedPlayer[] };
+export type SavedPlayer = { id: string; name: string; stats: {
+  matches: number; runs: number; ballsFaced: number; wickets: number;
+  ballsBowled: number; runsConceded: number; strikeRate: number | null; economy: number | null; average: number | null;
+} };
+export type Scorecard = {
+  extras: { wides: number; noBalls: number; total: number };
+  runRate: number | null;
+  batting: { id: string; name: string; runs: number; balls: number; isOut: boolean; strikeRate: number | null; fours: number; sixes: number }[];
+  bowling: { id: string; name: string; runs: number; wickets: number; overs: string; economy: number | null }[];
+  overs: { over: number; runs: number; wickets: number; legalBalls: number; extras: number; totalRuns: number; totalWickets: number }[];
+  fallOfWickets: { wicket: number; runs: number; overs: string; playerName: string }[];
+  partnerships: { wicket: number; players: string[]; runs: number; balls: number; ended: boolean }[];
 };

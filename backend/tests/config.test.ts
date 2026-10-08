@@ -6,9 +6,17 @@ const DATABASE_URL = 'postgresql://user:password@localhost/test';
 test('configuration accepts production settings and applies bounded defaults', () => {
   const env = parseEnv({ DATABASE_URL, NODE_ENV: 'production', CORS_ORIGINS: 'https://app.example.com, http://localhost:8081', PORT: '8080' });
   assert.equal(env.production, true);
+  assert.equal(env.legacyScoringEnabled, false);
+  assert.equal(env.legacyExportEnabled, false);
   assert.equal(env.port, 8080);
   assert.equal(env.databasePoolSize, 10);
   assert.deepEqual(env.corsOrigins, ['https://app.example.com', 'http://localhost:8081']);
+});
+test('legacy cloud scoring and export require explicit opt-in outside integration tests', () => {
+  const env = parseEnv({ DATABASE_URL, NODE_ENV: 'development', LEGACY_SCORING_ENABLED: 'true', ENABLE_LEGACY_EXPORT: 'true' });
+  assert.equal(env.legacyScoringEnabled, true);
+  assert.equal(env.legacyExportEnabled, true);
+  assert.equal(parseEnv({ DATABASE_URL, NODE_ENV: 'test' }).legacyScoringEnabled, true);
 });
 test('configuration fails early without exposing connection credentials', () => {
   for (const DATABASE_URL of [undefined, '', 'https://secret:password@localhost/db']) {

@@ -1,12 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { router, useLocalSearchParams } from "expo-router";
+import TextField from "../../components/TextField";
+import PrimaryButton from "../../components/PrimaryButton";
+import { colors, ui, hardShadow } from "../../theme/theme";
+import NameChoices from "../../components/NameChoices";
+import { useTeams } from "../../hooks/useTeams";
+import { useCallback, useRef, useState } from "react";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
+  KeyboardAvoidingView,
+  Platform,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -18,6 +24,7 @@ import {
   endInnings as endSavedInnings,
   finishMatch as finishSavedMatch,
   getInnings,
+  undoLastAction,
   recordExtra as saveExtra,
   recordScore,
   recordWicket as saveWicket,
@@ -48,6 +55,22 @@ export default function ScoreScreen() {
   const [startingSecond, setStartingSecond] = useState(false);
   const [error, setError] = useState("");
   const saving = useRef(false);
+  const [undoing, setUndoing] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const { teams } = useTeams();
+  const busy = savingRuns !== null || changingBowler || savingBatsman || savingWicket || savingExtra || endingInnings || startingSecond || undoing;
+  const battingId = innings?.battingTeamName === innings?.match.team1Name ? innings?.match.team1Id : innings?.match.team2Id;
+  const bowlingId = innings?.battingTeamName === innings?.match.team1Name ? innings?.match.team2Id : innings?.match.team1Id;
+  const battingNames = teams.find(team => team.id === battingId)?.players.map(player => player.name) ?? [];
+  const bowlingNames = teams.find(team => team.id === bowlingId)?.players.map(player => player.name) ?? [];
+
+  async function undo() {
+    if (!innings || saving.current) return;
+    saving.current = true; setUndoing(true); setError("");
+    try { setInnings(await undoLastAction(inningsId, innings.match.revision)); }
+    catch (error) { setError(error instanceof Error ? error.message : "Unable to undo."); }
+    finally { saving.current = false; setUndoing(false); }
+  }
 
   const fetchInnings = useCallback(() => {
     if (!inningsId)
@@ -75,7 +98,7 @@ export default function ScoreScreen() {
     }
   }, [fetchInnings]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     let active = true;
     fetchInnings()
       .then((result) => {
@@ -98,7 +121,7 @@ export default function ScoreScreen() {
     return () => {
       active = false;
     };
-  }, [fetchInnings]);
+  }, [fetchInnings]));
 
   async function addRuns(runs: number) {
     if (!inningsId || saving.current) return;
@@ -107,7 +130,7 @@ export default function ScoreScreen() {
     setError("");
     try {
       // Use the API response as the scoreboard state so the database remains authoritative.
-      setInnings(await recordScore(inningsId, runs));
+      setInnings(await recordScore(inningsId, runs, innings?.match.revision));
     } catch (scoreError) {
       setError(
         scoreError instanceof Error
@@ -126,7 +149,7 @@ export default function ScoreScreen() {
     setChangingBowler(true);
     setError("");
     try {
-      setInnings(await saveNextBowler(inningsId, nextBowlerName.trim()));
+      setInnings(await saveNextBowler(inningsId, nextBowlerName.trim(), innings?.match.revision));
       setNextBowlerName("");
     } catch (changeError) {
       setError(
@@ -146,7 +169,7 @@ export default function ScoreScreen() {
     setSavingWicket(true);
     setError("");
     try {
-      setInnings(await saveWicket(inningsId));
+      setInnings(await saveWicket(inningsId, innings?.match.revision));
     } catch (wicketError) {
       setError(
         wicketError instanceof Error
@@ -165,7 +188,7 @@ export default function ScoreScreen() {
     setSavingBatsman(true);
     setError("");
     try {
-      setInnings(await saveNewBatsman(inningsId, newBatsmanName.trim()));
+      setInnings(await saveNewBatsman(inningsId, newBatsmanName.trim(), innings?.match.revision));
       setNewBatsmanName("");
     } catch (batsmanError) {
       setError(
@@ -185,7 +208,7 @@ export default function ScoreScreen() {
     setSavingExtra(true);
     setError("");
     try {
-      setInnings(await saveExtra(inningsId, eventType));
+      setInnings(await saveExtra(inningsId, eventType, innings?.match.revision));
     } catch (extraError) {
       setError(
         extraError instanceof Error
@@ -205,10 +228,10 @@ export default function ScoreScreen() {
     setError("");
     try {
       if (innings?.inningsNumber === 2) {
-        await finishSavedMatch(innings.match.id);
+        await finishSavedMatch(innings.match.id, innings.match.revision);
         setInnings(await getInnings(inningsId));
       } else {
-        setInnings(await endSavedInnings(inningsId));
+        setInnings(await endSavedInnings(inningsId, innings?.match.revision));
       }
     } catch (endError) {
       setError(
@@ -285,19 +308,20 @@ export default function ScoreScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Back to Home"
           onPress={() => router.replace("/")}
           style={styles.back}
         >
-          <Text style={styles.backText}>‹ Back to Home</Text>
+          <Text style={styles.backText}>← Match centre</Text>
         </Pressable>
-        <Text style={styles.label}>GULLY CRICKET</Text>
+        <Text style={styles.label}>{innings?.status === "COMPLETED" ? "INNINGS COMPLETE" : "THE LIVE SCOREBOOK"}</Text>
         {loading && !innings ? (
           <ActivityIndicator
-            color="#b8e46a"
+            color={colors.ink}
             accessibilityLabel="Loading scoreboard"
             style={styles.loader}
           />
@@ -328,7 +352,9 @@ export default function ScoreScreen() {
                 <Text style={styles.wickets}> / {innings.wickets}</Text>
               </Text>
               <Text style={styles.scoreCaption}>RUNS / WICKETS</Text>
+              <View style={styles.scoreMeta}><Text style={styles.overText}>{innings.completedOvers}.{innings.ballsInCurrentOver} <Text style={styles.overLimit}>/ {innings.match.oversLimit} overs</Text></Text><Text style={styles.overLimit}>INNINGS 0{innings.inningsNumber}</Text></View>
             </View>
+            <View style={styles.recentRow}><Text style={styles.recentLabel}>LAST BALLS</Text><View style={styles.balls}>{[...innings.ballEvents].sort((a, b) => a.sequence - b.sequence).slice(-6).map(event => <View key={event.id} style={[styles.ball, event.eventType === 'WICKET' && { backgroundColor: colors.coral }, event.runs >= 4 && { backgroundColor: colors.lime }]}><Text style={styles.ballText}>{event.eventType === 'WICKET' ? 'W' : event.eventType === 'WIDE' ? 'Wd' : event.eventType === 'NO_BALL' ? 'Nb' : event.runs}</Text></View>)}{!innings.ballEvents.length ? <Text style={styles.overLimit}>First ball awaits.</Text> : null}</View></View>
             <InningsPlayersCard
               striker={striker}
               nonStriker={nonStriker}
@@ -336,14 +362,6 @@ export default function ScoreScreen() {
               previousBowler={shownBowler}
               bowlerChangeRequired={bowlerChangeRequired}
             />
-            <View style={styles.overStatus}>
-              <Text style={styles.overText}>
-                {innings.completedOvers}.{innings.ballsInCurrentOver} overs
-              </Text>
-              <Text style={styles.overLimit}>
-                of {innings.match.oversLimit} overs
-              </Text>
-            </View>
             {innings.inningsNumber === 2 && innings.match.target !== null ? (
               <View style={styles.chaseCard}>
                 <Text style={styles.chaseTarget}>
@@ -374,42 +392,45 @@ export default function ScoreScreen() {
                 <Text style={styles.nextBowlerHint}>
                   {innings.bowlingTeamName} will chase {innings.match.target}.
                 </Text>
-                <TextInput
+                <NameChoices names={bowlingNames.filter(name => name !== secondNonStriker)} onSelect={setSecondStriker} disabled={busy} />
+                <TextField
                   accessibilityLabel="Second innings striker"
                   value={secondStriker}
                   onChangeText={setSecondStriker}
                   placeholder="Opening striker"
                   placeholderTextColor="#849080"
                   maxLength={60}
-                  editable={!startingSecond}
+                  editable={!busy}
                   autoCapitalize="words"
                   style={styles.input}
                 />
-                <TextInput
+                <NameChoices names={bowlingNames.filter(name => name !== secondStriker)} onSelect={setSecondNonStriker} disabled={busy} />
+                <TextField
                   accessibilityLabel="Second innings non-striker"
                   value={secondNonStriker}
                   onChangeText={setSecondNonStriker}
                   placeholder="Non-striker"
                   placeholderTextColor="#849080"
                   maxLength={60}
-                  editable={!startingSecond}
+                  editable={!busy}
                   autoCapitalize="words"
                   style={styles.input}
                 />
-                <TextInput
+                <NameChoices names={battingNames} onSelect={setSecondBowler} disabled={busy} />
+                <TextField
                   accessibilityLabel="Second innings bowler"
                   value={secondBowler}
                   onChangeText={setSecondBowler}
                   placeholder="Opening bowler"
                   placeholderTextColor="#849080"
                   maxLength={60}
-                  editable={!startingSecond}
+                  editable={!busy}
                   autoCapitalize="words"
                   style={styles.input}
                 />
                 <Pressable
                   accessibilityRole="button"
-                  disabled={startingSecond}
+                  disabled={busy}
                   onPress={() => {
                     void startSecondInnings();
                   }}
@@ -442,20 +463,21 @@ export default function ScoreScreen() {
                 <Text style={styles.nextBowlerHint}>
                   Enter the next batsman to continue.
                 </Text>
-                <TextInput
+                <NameChoices names={battingNames.filter(name => !innings.players.some(player => player.playerType === "BATSMAN" && player.playerName.toLowerCase() === name.toLowerCase()))} onSelect={setNewBatsmanName} disabled={busy} />
+                <TextField
                   accessibilityLabel="New batsman name"
                   value={newBatsmanName}
                   onChangeText={setNewBatsmanName}
                   placeholder="e.g. Sameer"
                   placeholderTextColor="#849080"
                   maxLength={60}
-                  editable={!savingBatsman}
+                  editable={!busy}
                   autoCapitalize="words"
                   style={styles.input}
                 />
                 <Pressable
                   accessibilityRole="button"
-                  disabled={savingBatsman || !newBatsmanName.trim()}
+                  disabled={busy || !newBatsmanName.trim()}
                   onPress={() => {
                     void addNewBatsman();
                   }}
@@ -477,20 +499,21 @@ export default function ScoreScreen() {
                 <Text style={styles.nextBowlerHint}>
                   Enter the bowler for the next over.
                 </Text>
-                <TextInput
+                <NameChoices names={bowlingNames} onSelect={setNextBowlerName} disabled={busy} />
+                <TextField
                   accessibilityLabel="Next bowler name"
                   value={nextBowlerName}
                   onChangeText={setNextBowlerName}
                   placeholder="e.g. Aman"
                   placeholderTextColor="#849080"
                   maxLength={60}
-                  editable={!changingBowler}
+                  editable={!busy}
                   autoCapitalize="words"
                   style={styles.input}
                 />
                 <Pressable
                   accessibilityRole="button"
-                  disabled={changingBowler || !nextBowlerName.trim()}
+                  disabled={busy || !nextBowlerName.trim()}
                   onPress={() => {
                     void changeBowler();
                   }}
@@ -509,6 +532,7 @@ export default function ScoreScreen() {
             ) : (
               <>
                 <InningsScoringControls
+                  busy={busy || loading}
                   savingRuns={savingRuns}
                   savingWicket={savingWicket}
                   savingExtra={savingExtra}
@@ -524,12 +548,15 @@ export default function ScoreScreen() {
                 />
               </>
             )}
+            <Pressable accessibilityRole="button" disabled={busy || !innings.canUndo} onPress={() => void undo()} style={[styles.undoButton, (busy || !innings.canUndo) && styles.disabled]}>
+              <Text style={styles.undoText}>{undoing ? "Undoing…" : `Undo ${innings.undoLabel ?? "last action"}`}</Text>
+            </Pressable>
             {innings.status === "IN_PROGRESS" ? (
               <Pressable
                 accessibilityRole="button"
-                disabled={endingInnings}
+                disabled={busy}
                 onPress={() => {
-                  void endInnings();
+                  setConfirmEnd(true);
                 }}
                 style={({ pressed }) => [
                   styles.finishButton,
@@ -542,6 +569,7 @@ export default function ScoreScreen() {
                 </Text>
               </Pressable>
             ) : null}
+            {confirmEnd && innings.status === "IN_PROGRESS" ? <View style={styles.confirmCard}><Text style={styles.sectionTitleDark}>Finish this innings?</Text><Text style={styles.nextBowlerHint}>This closes the current innings at {innings.runs}/{innings.wickets}.</Text><PrimaryButton title="Yes, finish innings" loading={busy} onPress={() => { setConfirmEnd(false); void endInnings(); }} /><Pressable accessibilityRole="button" disabled={busy} onPress={() => setConfirmEnd(false)} style={styles.retry}><Text style={styles.backText}>Keep playing</Text></Pressable></View> : null}
             {error ? (
               <Text
                 accessibilityRole="alert"
@@ -551,144 +579,27 @@ export default function ScoreScreen() {
                 {error}
               </Text>
             ) : null}
-            <Text style={styles.hint}>
-              Each score is saved as a delivery. Strike rotates after 1 or 3
-              runs and at the end of each over.
-            </Text>
+            <Pressable accessibilityRole="button" disabled={busy} onPress={() => void loadInnings()} style={styles.retry}>
+              <Text style={styles.backText}>Refresh scoreboard</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" disabled={busy} onPress={() => router.push({ pathname: "/matches/[matchId]", params: { matchId: innings.match.id } })} style={styles.retry}>
+              <Text style={styles.backText}>Full scorecard</Text>
+            </Pressable>
+
           </>
         ) : null}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#10281b" },
-  content: {
-    padding: 24,
-    paddingTop: 20,
-    width: "100%",
-    maxWidth: 520,
-    alignSelf: "center",
-  },
-  back: {
-    minHeight: 44,
-    justifyContent: "center",
-    alignSelf: "flex-start",
-    marginBottom: 20,
-  },
-  backText: { color: "#b8e46a", fontSize: 15 },
-  label: {
-    color: "#b8e46a",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 3,
-    marginBottom: 14,
-  },
-  loader: { padding: 32 },
-  team: { color: "#ffffff", fontSize: 28, fontWeight: "800", marginBottom: 14 },
-  scoreCard: {
-    backgroundColor: "#b8e46a",
-    borderRadius: 18,
-    padding: 20,
-    marginBottom: 14,
-  },
-  score: { color: "#10281b", fontSize: 48, fontWeight: "800", lineHeight: 54 },
-  wickets: { fontSize: 32, fontWeight: "700" },
-  scoreCaption: {
-    color: "#31552c",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 2,
-    marginTop: 4,
-  },
-  overStatus: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  overText: { color: "#ffffff", fontSize: 18, fontWeight: "700" },
-  overLimit: { color: "#c4d2c8", fontSize: 14 },
-  chaseCard: {
-    backgroundColor: "#173a28",
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 14,
-  },
-  chaseTarget: { color: "#b8e46a", fontSize: 18, fontWeight: "800" },
-  chaseRequired: {
-    color: "#c4d2c8",
-    fontSize: 14,
-    lineHeight: 22,
-    marginTop: 4,
-  },
-  notice: {
-    backgroundColor: "#f6f8ef",
-    borderRadius: 18,
-    padding: 20,
-    marginBottom: 18,
-  },
-  sectionTitleDark: {
-    color: "#10281b",
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 12,
-  },
-  nextBowlerCard: {
-    backgroundColor: "#f6f8ef",
-    borderRadius: 18,
-    padding: 20,
-    marginBottom: 12,
-  },
-  nextBowlerHint: {
-    color: "#536253",
-    fontSize: 14,
-    lineHeight: 21,
-    marginBottom: 14,
-  },
-  input: {
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#d1dacb",
-    borderRadius: 10,
-    color: "#10281b",
-    fontSize: 17,
-    minHeight: 54,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 14,
-  },
-  changeButton: {
-    backgroundColor: "#b8e46a",
-    minHeight: 54,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 14,
-  },
-  changeButtonText: { color: "#10281b", fontSize: 16, fontWeight: "700" },
-  targetText: {
-    color: "#10281b",
-    fontSize: 24,
-    fontWeight: "800",
-    marginBottom: 8,
-  },
-  finishButton: {
-    minHeight: 52,
-    borderWidth: 1,
-    borderColor: "#d99380",
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 14,
-  },
-  finishText: { color: "#ffd1c9", fontSize: 15, fontWeight: "700" },
-  pressed: { opacity: 0.7 },
-  disabled: { opacity: 0.65 },
-  inlineError: { color: "#ffd1c9", fontSize: 14, lineHeight: 21, marginTop: 4 },
-  hint: { color: "#c4d2c8", fontSize: 13, lineHeight: 20, marginTop: 12 },
-  error: { color: "#a3322a", fontSize: 15, lineHeight: 22 },
-  retry: { minHeight: 44, justifyContent: "center", alignSelf: "flex-start" },
-  retryText: { color: "#257039", fontWeight: "700" },
+ screen: ui.screen, content: { ...ui.content, paddingTop: 8 }, back: { ...ui.back, marginBottom: 6 }, backText: ui.backText,
+ label: { ...ui.eyebrow, marginBottom: 8 }, loader: { padding: 32 }, team: { color: colors.ink, fontSize: 26, fontWeight: '900', letterSpacing: -0.7, marginBottom: 12 },
+ scoreCard: { ...ui.card, ...hardShadow, backgroundColor: colors.lime, padding: 16, marginBottom: 18 }, score: { color: colors.ink, fontSize: 58, fontWeight: '900', letterSpacing: -2, fontVariant: ['tabular-nums'] }, wickets: { fontSize: 34, fontWeight: '600', letterSpacing: -1 }, scoreCaption: { color: colors.ink, fontSize: 9, fontWeight: '700', letterSpacing: 1.5 }, scoreMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderColor: '#99AF42', marginTop: 14, paddingTop: 10 }, overText: { color: colors.ink, fontSize: 19, fontWeight: '800' }, overLimit: { color: colors.muted, fontSize: 11, fontWeight: '600' },
+ recentRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 }, recentLabel: { color: colors.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1 }, balls: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, flex: 1 }, ball: { borderWidth: 1, borderColor: colors.ink, borderRadius: 3, minWidth: 28, minHeight: 28, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white }, ballText: { color: colors.ink, fontSize: 11, fontWeight: '800' },
+ chaseCard: { ...ui.card, backgroundColor: colors.lavender, padding: 14 }, chaseTarget: { color: colors.ink, fontSize: 18, fontWeight: '800' }, chaseRequired: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 4 }, notice: ui.card, nextBowlerCard: ui.card, sectionTitleDark: { color: colors.ink, fontSize: 20, fontWeight: '800', marginBottom: 12 }, nextBowlerHint: { color: colors.muted, fontSize: 14, lineHeight: 22, marginBottom: 14 }, input: ui.input,
+ changeButton: { ...hardShadow, minHeight: 54, backgroundColor: colors.lime, borderWidth: 1.5, borderColor: colors.ink, borderRadius: 4, justifyContent: 'center', alignItems: 'center', padding: 14 }, changeButtonText: { color: colors.ink, fontSize: 15, fontWeight: '800' }, targetText: { color: colors.ink, fontSize: 26, fontWeight: '800', marginBottom: 8 }, finishButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 12 }, finishText: { color: colors.error, fontSize: 13, fontWeight: '700' }, undoButton: { minHeight: 48, borderWidth: 1.5, borderColor: colors.ink, borderRadius: 4, backgroundColor: colors.white, justifyContent: 'center', alignItems: 'center', marginTop: 16, padding: 10 }, undoText: { color: colors.ink, fontSize: 14, fontWeight: '700' }, confirmCard: { ...ui.card, backgroundColor: colors.coral, marginTop: 12 },
+ pressed: { opacity: 0.65 }, disabled: { opacity: 0.4 }, inlineError: { ...ui.error, marginTop: 12 }, hint: ui.subtitle, error: ui.error, retry: { minHeight: 48, justifyContent: 'center', alignSelf: 'flex-start' }, retryText: ui.backText,
 });

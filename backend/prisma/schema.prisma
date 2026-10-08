@@ -48,6 +48,12 @@ enum BallEventType {
 }
 
 model Match {
+  revision            Int         @default(0)
+  team1Id             String?
+  team2Id             String?
+  team1               Team?       @relation("FirstTeam", fields: [team1Id], references: [id], onDelete: Restrict)
+  team2               Team?       @relation("SecondTeam", fields: [team2Id], references: [id], onDelete: Restrict)
+  actions             MatchAction[]
   ownerId             String?
   owner               User?       @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   id                  String      @id @default(cuid())
@@ -92,6 +98,8 @@ model Innings {
 }
 
 model PlayerInnings {
+  playerId     String?
+  player       Player? @relation(fields: [playerId], references: [id], onDelete: Restrict)
   id           String            @id @default(cuid())
   inningsId    String
   playerName   String
@@ -106,9 +114,12 @@ model PlayerInnings {
   innings      Innings           @relation(fields: [inningsId], references: [id], onDelete: Cascade)
 
   @@index([inningsId])
+  @@index([playerId])
 }
 
 model BallEvent {
+  batsmanId       String?
+  nonStrikerName  String?
   id          String        @id @default(cuid())
   inningsId   String
   // Sequence starts at 1 and includes extras, so every action has a stable order.
@@ -133,6 +144,7 @@ model User {
   createdAt    DateTime  @default(now())
   sessions     Session[]
   matches      Match[]
+  teams        Team[]
 }
 
 model Session {
@@ -151,4 +163,42 @@ model AuthThrottle {
   expiresAt DateTime
 
   @@index([expiresAt])
+}
+
+model Team {
+  id        String @id @default(cuid())
+  ownerId   String
+  name      String
+  nameKey   String
+  owner     User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  players   Player[]
+  firstMatches Match[] @relation("FirstTeam")
+  secondMatches Match[] @relation("SecondTeam")
+  @@unique([ownerId, nameKey])
+}
+
+model Player {
+  id        String @id @default(cuid())
+  teamId    String
+  name      String
+  nameKey   String
+  team      Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  innings   PlayerInnings[]
+  @@unique([teamId, nameKey])
+}
+
+model MatchAction {
+  id          String @id @default(cuid())
+  matchId     String
+  inningsId   String
+  requestId   String
+  fingerprint String
+  kind        String
+  revision    Int
+  snapshot    Json?
+  undoneAt    DateTime?
+  createdAt   DateTime @default(now())
+  match       Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  @@unique([matchId, requestId])
+  @@unique([matchId, revision])
 }

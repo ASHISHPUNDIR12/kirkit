@@ -1,4 +1,9 @@
-import { useRef, useState } from "react";
+import TextField from "../components/TextField";
+import { colors, ui } from "../theme/theme";
+import NameChoices from "../components/NameChoices";
+import { useTeams } from "../hooks/useTeams";
+import type { MatchDetails } from "../types/api";
+import { useEffect, useRef, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   KeyboardAvoidingView,
@@ -7,12 +12,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import PrimaryButton from "../components/PrimaryButton";
-import { startMatch } from "../services/api";
+import { getMatch, startMatch } from "../services/api";
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
@@ -40,6 +44,17 @@ export default function SetupInningsScreen() {
   const [saved, setSaved] = useState(false);
   const [startedInningsId, setStartedInningsId] = useState("");
   const submitting = useRef(false);
+  const { teams } = useTeams();
+  const [rosterMatch, setRosterMatch] = useState<MatchDetails | null>(null);
+  useEffect(() => {
+    let active = true;
+    getMatch(matchId).then(match => { if (active) setRosterMatch(match); }).catch(() => {});
+    return () => { active = false; };
+  }, [matchId]);
+  const battingId = battingTeam === team1Name ? rosterMatch?.team1Id : rosterMatch?.team2Id;
+  const bowlingId = battingTeam === team1Name ? rosterMatch?.team2Id : rosterMatch?.team1Id;
+  const batters = teams.find(team => team.id === battingId)?.players.map(player => player.name) ?? [];
+  const bowlers = teams.find(team => team.id === bowlingId)?.players.map(player => player.name) ?? [];
 
   async function saveSetup() {
     if (submitting.current) return;
@@ -100,9 +115,9 @@ export default function SetupInningsScreen() {
             disabled={saving}
             style={styles.back}
           >
-            <Text style={styles.backText}>‹ Back to Home</Text>
+            <Text style={styles.backText}>← Home</Text>
           </Pressable>
-          <Text style={styles.label}>GULLY CRICKET</Text>
+          <Text style={styles.label}>MATCH DAY / 02</Text>
           <Text style={styles.title}>
             {saved ? "First innings is ready." : "Set up the innings."}
           </Text>
@@ -151,8 +166,9 @@ export default function SetupInningsScreen() {
                   <Pressable
                     key={team}
                     accessibilityRole="radio"
-                    accessibilityState={{ checked: battingTeam === team }}
-                    onPress={() => setBattingTeam(team)}
+                    accessibilityState={{ checked: battingTeam === team, disabled: saving }}
+                    disabled={saving}
+                    onPress={() => { if (team !== battingTeam) { setBattingTeam(team); setStriker(""); setNonStriker(""); setBowler(""); } }}
                     style={[
                       styles.teamOption,
                       battingTeam === team && styles.teamSelected,
@@ -177,7 +193,8 @@ export default function SetupInningsScreen() {
                   </Pressable>
                 ))}
                 <Text style={styles.fieldLabel}>Striker batsman</Text>
-                <TextInput
+                <NameChoices names={batters.filter(name => name !== nonStriker)} onSelect={setStriker} disabled={saving} />
+                <TextField
                   accessibilityLabel="Striker batsman"
                   value={striker}
                   onChangeText={setStriker}
@@ -189,7 +206,8 @@ export default function SetupInningsScreen() {
                   style={styles.input}
                 />
                 <Text style={styles.fieldLabel}>Non-striker batsman</Text>
-                <TextInput
+                <NameChoices names={batters.filter(name => name !== striker)} onSelect={setNonStriker} disabled={saving} />
+                <TextField
                   accessibilityLabel="Non-striker batsman"
                   value={nonStriker}
                   onChangeText={setNonStriker}
@@ -201,7 +219,8 @@ export default function SetupInningsScreen() {
                   style={styles.input}
                 />
                 <Text style={styles.fieldLabel}>Opening bowler</Text>
-                <TextInput
+                <NameChoices names={bowlers} onSelect={setBowler} disabled={saving} />
+                <TextField
                   accessibilityLabel="Opening bowler"
                   value={bowler}
                   onChangeText={setBowler}
@@ -236,87 +255,17 @@ export default function SetupInningsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#10281b" },
-  content: { padding: 24, width: "100%", maxWidth: 520, alignSelf: "center" },
-  back: {
-    minHeight: 44,
-    justifyContent: "center",
-    alignSelf: "flex-start",
-    marginBottom: 24,
-  },
-  backText: { color: "#b8e46a", fontSize: 15 },
-  label: {
-    color: "#b8e46a",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 3,
-    marginBottom: 16,
-  },
-  title: { color: "#ffffff", fontSize: 34, fontWeight: "800" },
-  subtitle: {
-    color: "#c4d2c8",
-    fontSize: 16,
-    lineHeight: 24,
-    marginTop: 12,
-    marginBottom: 28,
-  },
-  card: { backgroundColor: "#f6f8ef", borderRadius: 20, padding: 22 },
-  fieldLabel: {
-    color: "#10281b",
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 9,
-    marginTop: 8,
-  },
-  teamOption: {
-    minHeight: 54,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#d1dacb",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  teamSelected: { borderColor: "#257039", backgroundColor: "#edf5e8" },
-  teamOptionText: { color: "#536253", fontSize: 16, fontWeight: "600" },
-  teamSelectedText: { color: "#10281b" },
-  radio: { color: "#849080", fontSize: 18 },
-  radioSelected: { color: "#257039" },
-  input: {
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#d1dacb",
-    borderRadius: 10,
-    color: "#10281b",
-    fontSize: 17,
-    minHeight: 54,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 14,
-  },
-  error: { color: "#a3322a", fontSize: 14, lineHeight: 21, marginBottom: 18 },
-  savedTeam: {
-    color: "#10281b",
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 16,
-  },
-  savedText: { color: "#536253", fontSize: 16, lineHeight: 26 },
-  hint: {
-    color: "#536253",
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: 18,
-    marginBottom: 22,
-  },
-  homeLink: {
-    minHeight: 48,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  homeLinkText: { color: "#257039", fontSize: 15, fontWeight: "700" },
+ screen: ui.screen, content: ui.content, back: ui.back, backText: ui.backText,
+ label: ui.eyebrow, title: ui.title, subtitle: ui.subtitle, card: ui.card,
+ fieldLabel: { ...ui.fieldLabel, marginTop: 8 }, input: ui.input, error: ui.error,
+ team: { color: colors.ink, fontSize: 27, fontWeight: '800' },
+ vs: { color: colors.muted, marginVertical: 10, fontSize: 13 },
+ savedOvers: { color: colors.muted, fontSize: 14, lineHeight: 22, marginTop: 20, marginBottom: 26 },
+ hint: { color: colors.muted, fontSize: 12, lineHeight: 19, marginBottom: 24 },
+ homeLink: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+ homeLinkText: { color: colors.ink, fontWeight: '700', fontSize: 14 },
+ teamOption: { minHeight: 56, borderWidth: 1.5, borderColor: colors.ink, borderRadius: 4, padding: 14, marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+ teamSelected: { backgroundColor: colors.lime }, teamOptionText: { color: colors.ink, fontSize: 16, fontWeight: '700', flex: 1 }, teamSelectedText: { color: colors.ink }, radio: { color: colors.ink, fontSize: 20 }, radioSelected: { color: colors.ink },
+ savedTeam: { color: colors.ink, fontSize: 22, fontWeight: '800', marginBottom: 16 }, savedText: { color: colors.muted, fontSize: 16, lineHeight: 28 },
+ presets: { flexDirection: 'row', gap: 10, marginBottom: 14 }, preset: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.ink, borderRadius: 4 }, presetText: { color: colors.ink, fontSize: 14, fontWeight: '800' },
 });

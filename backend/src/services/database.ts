@@ -1,6 +1,11 @@
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../generated/prisma/client.js';
-import { env } from '../utils/env.js';
+import { setDefaultAutoSelectFamily } from "node:net";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "../generated/prisma/client.js";
+import { env } from "../utils/env.js";
+
+// Preserve the connection workaround needed by this project on its WSL network.
+// IPv4/IPv6 connection racing previously caused PostgreSQL connection timeouts.
+setDefaultAutoSelectFamily(false);
 
 const adapter = new PrismaPg({
   connectionString: env.databaseUrl,
