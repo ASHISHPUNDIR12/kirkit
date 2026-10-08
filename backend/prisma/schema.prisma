@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MatchStatus {
+  CREATED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum InningsStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum PlayerType {
+  BATSMAN
+  BOWLER
+}
+
+// Null means the player is no longer one of the three active players.
+enum ActivePlayerRole {
+  STRIKER
+  NON_STRIKER
+  BOWLER
+}
+
+enum PendingBatsmanRole {
+  STRIKER
+  NON_STRIKER
+}
+
+enum BallEventType {
+  DOT
+  ONE
+  TWO
+  THREE
+  FOUR
+  SIX
+  WICKET
+  WIDE
+  NO_BALL
+}
+
+model Match {
+  ownerId             String?
+  owner               User?       @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  id                  String      @id @default(cuid())
+  team1Name           String
+  team2Name           String
+  oversLimit          Int
+  battingFirstTeam    String?
+  currentInnings      Int         @default(1)
+  status              MatchStatus @default(CREATED)
+  firstInningsRuns    Int?
+  firstInningsWickets Int?
+  target              Int?
+  winner              String?
+  result              String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  innings             Innings[]
+
+  @@index([createdAt])
+  @@index([ownerId, createdAt])
+}
+
+model Innings {
+  id                 String          @id @default(cuid())
+  matchId            String
+  inningsNumber      Int
+  battingTeamName    String
+  bowlingTeamName    String
+  runs               Int             @default(0)
+  wickets            Int             @default(0)
+  completedOvers     Int             @default(0)
+  ballsInCurrentOver Int             @default(0)
+  pendingBatsmanRole PendingBatsmanRole?
+  status             InningsStatus   @default(IN_PROGRESS)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  match              Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  players            PlayerInnings[]
+  ballEvents         BallEvent[]
+
+  @@unique([matchId, inningsNumber])
+}
+
+model PlayerInnings {
+  id           String            @id @default(cuid())
+  inningsId    String
+  playerName   String
+  playerType   PlayerType
+  activeRole   ActivePlayerRole?
+  runs         Int               @default(0)
+  ballsFaced   Int               @default(0)
+  wicketsTaken Int               @default(0)
+  runsConceded Int               @default(0)
+  ballsBowled  Int               @default(0)
+  isOut        Boolean           @default(false)
+  innings      Innings           @relation(fields: [inningsId], references: [id], onDelete: Cascade)
+
+  @@index([inningsId])
+}
+
+model BallEvent {
+  id          String        @id @default(cuid())
+  inningsId   String
+  // Sequence starts at 1 and includes extras, so every action has a stable order.
+  sequence    Int
+  // One-based delivery position. Extras can share the next legal ball's position.
+  overNumber  Int
+  ballNumber  Int
+  batsmanName String
+  bowlerName  String
+  runs        Int           @default(0)
+  eventType   BallEventType
+  createdAt   DateTime      @default(now())
+  innings     Innings       @relation(fields: [inningsId], references: [id], onDelete: Cascade)
+
+  @@unique([inningsId, sequence])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+  matches      Match[]
+}
+
+model Session {
+  tokenHash String   @id
+  userId    String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model AuthThrottle {
+  key       String   @id
+  hits      Int
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
